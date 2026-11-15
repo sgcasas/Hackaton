@@ -1,25 +1,32 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Red TeleCorp - portal y panel (React) en S3 privado + CloudFront. Se despliega una sola vez en us-east-1.
+Description: >
+  Red TeleCorp - portal y panel (React). Bucket S3 con sitio web estático + CloudFront (HTTPS) con el sitio como origen.
+  Sin Origin Access Control: el Learner Lab no deja crearlo (cloudfront:CreateOriginAccessControl). Solo en us-east-1.
 
 Resources:
   BucketWeb:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub redtelecorp-web-${AWS::AccountId}
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
-        BlockPublicPolicy: true
+        BlockPublicPolicy: false
         IgnorePublicAcls: true
-        RestrictPublicBuckets: true
+        RestrictPublicBuckets: false
 
-  OAC:
-    Type: AWS::CloudFront::OriginAccessControl
+  PoliticaBucket:
+    Type: AWS::S3::BucketPolicy
     Properties:
-      OriginAccessControlConfig:
-        Name: !Sub redtelecorp-web-oac-${AWS::AccountId}
-        OriginAccessControlOriginType: s3
-        SigningBehavior: always
-        SigningProtocol: sigv4
+      Bucket: !Ref BucketWeb
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub ${BucketWeb.Arn}/*
 
   Distribucion:
     Type: AWS::CloudFront::Distribution
@@ -32,9 +39,9 @@ Resources:
         HttpVersion: http2
         Origins:
           - Id: s3web
-            DomainName: !GetAtt BucketWeb.RegionalDomainName
-            OriginAccessControlId: !GetAtt OAC.Id
-            S3OriginConfig: {OriginAccessIdentity: ""}
+            DomainName: !Select [1, !Split ["//", !GetAtt BucketWeb.WebsiteURL]]
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
         DefaultCacheBehavior:
           TargetOriginId: s3web
           ViewerProtocolPolicy: redirect-to-https
@@ -49,20 +56,6 @@ Resources:
           - {ErrorCode: 403, ResponseCode: 200, ResponsePagePath: /index.html}
           - {ErrorCode: 404, ResponseCode: 200, ResponsePagePath: /index.html}
 
-  PoliticaBucket:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref BucketWeb
-      PolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal: {Service: cloudfront.amazonaws.com}
-            Action: s3:GetObject
-            Resource: !Sub ${BucketWeb.Arn}/*
-            Condition:
-              StringEquals:
-                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribucion}
-
 Outputs:
   BucketWeb:
     Value: !Ref BucketWeb
@@ -70,3 +63,6 @@ Outputs:
     Value: !Ref Distribucion
   Url:
     Value: !Sub https://${Distribucion.DomainName}
+  UrlS3:
+    Description: Respaldo sin HTTPS (directo del bucket)
+    Value: !GetAtt BucketWeb.WebsiteURL
