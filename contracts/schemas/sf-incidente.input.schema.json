@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "origen": {
+      "enum": [
+        "ZONA",
+        "ANTENA"
+      ]
+    },
+    "evento": {
+      "enum": [
+        "COLECTIVO",
+        "CAIDA",
+        "SATURADA",
+        "INHABILITADA",
+        "ANOMALIA"
+      ]
+    },
+    "zonaId": {
+      "type": "string",
+      "pattern": "^Z\\d{2}$"
+    },
+    "antenaId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^A\\d{3}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "detectadoEn": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "anomaliaScore": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "required": [
+    "origen",
+    "evento",
+    "zonaId",
+    "antenaId",
+    "detectadoEn"
+  ],
+  "additionalProperties": false,
+  "title": "sf-incidente.input"
+}

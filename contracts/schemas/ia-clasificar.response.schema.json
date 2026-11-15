@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "tipo": {
+      "enum": [
+        "SIN_INTERNET",
+        "SIN_LLAMADAS",
+        "SIN_SMS",
+        "LENTITUD",
+        "SIN_SENAL",
+        "OTRO"
+      ]
+    },
+    "urgencia": {
+      "enum": [
+        "BAJA",
+        "MEDIA",
+        "ALTA"
+      ]
+    }
+  },
+  "required": [
+    "tipo",
+    "urgencia"
+  ],
+  "additionalProperties": false,
+  "title": "ia-clasificar.response"
+}

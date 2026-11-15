@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "incidente": {
+      "type": "object"
+    },
+    "antenas": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "reportes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "incidente",
+    "antenas",
+    "reportes"
+  ],
+  "additionalProperties": false,
+  "title": "ia-resumir.request"
+}

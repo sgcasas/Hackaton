@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "codigo": {
+      "type": "string",
+      "minLength": 8
+    },
+    "fechaRegistro": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "dni": {
+      "type": "string",
+      "pattern": "^\\d{8}$"
+    },
+    "numero": {
+      "type": "string",
+      "pattern": "^9\\d{8}$"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "celular": {
+      "type": "string",
+      "pattern": "^\\+519\\d{8}$"
+    },
+    "canales": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "email",
+          "sms"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "lat": {
+      "type": "number",
+      "minimum": -90,
+      "maximum": 90
+    },
+    "lon": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 180
+    },
+    "fechaHoraUsuario": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "tipo": {
+      "enum": [
+        "SIN_INTERNET",
+        "SIN_LLAMADAS",
+        "SIN_SMS",
+        "LENTITUD",
+        "SIN_SENAL",
+        "OTRO"
+      ]
+    },
+    "descripcion": {
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "codigo",
+    "fechaRegistro",
+    "dni",
+    "numero",
+    "canales",
+    "lat",
+    "lon",
+    "fechaHoraUsuario",
+    "tipo",
+    "descripcion"
+  ],
+  "additionalProperties": false,
+  "title": "reporte.sqs"
+}

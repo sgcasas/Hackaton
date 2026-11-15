@@ -1,0 +1,308 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Red TeleCorp - BASE de contratos (Fase 0). Tablas, bucket, colas, parametros y alarmas.
+  Mismo template en us-east-1 (EsRegionPrincipal=true) y us-west-2 (false).
+  Las Lambdas y Step Functions se agregan encima de esta base en la Fase 1.
+
+Parameters:
+  Proyecto:
+    Type: String
+    Default: redtelecorp
+  EsRegionPrincipal:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: true solo en us-east-1. Las Global Tables se crean una vez y se replican solas.
+  RegionReplica:
+    Type: String
+    Default: ""
+    Description: Region de la replica de las Global Tables (ej. us-west-2). Vacio = sin replica todavia.
+
+Conditions:
+  EsPrincipal: !Equals [!Ref EsRegionPrincipal, "true"]
+  ConReplica: !And [!Condition EsPrincipal, !Not [!Equals [!Ref RegionReplica, ""]]]
+
+Resources:
+  # ---------------- DynamoDB (Global Tables) ----------------
+  TablaIncidencias:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: EsPrincipal
+    Properties:
+      TableName: !Sub ${Proyecto}-incidencias
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: zonaId, AttributeType: S }
+        - { AttributeName: fechaRegistro, AttributeType: S }
+        - { AttributeName: estado, AttributeType: S }
+        - { AttributeName: prioridad, AttributeType: S }
+        - { AttributeName: dni, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: por-zona
+          KeySchema: [{ AttributeName: zonaId, KeyType: HASH }, { AttributeName: fechaRegistro, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: por-estado
+          KeySchema: [{ AttributeName: estado, KeyType: HASH }, { AttributeName: prioridad, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: por-dni
+          KeySchema: [{ AttributeName: dni, KeyType: HASH }, { AttributeName: fechaRegistro, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+        - !If
+          - ConReplica
+          - Region: !Ref RegionReplica
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+          - !Ref AWS::NoValue
+
+  TablaRed:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: EsPrincipal
+    Properties:
+      TableName: !Sub ${Proyecto}-red
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: tipoEntidad, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: por-tipo
+          KeySchema: [{ AttributeName: tipoEntidad, KeyType: HASH }, { AttributeName: pk, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+        - !If
+          - ConReplica
+          - Region: !Ref RegionReplica
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+          - !Ref AWS::NoValue
+
+  TablaIncidentes:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: EsPrincipal
+    Properties:
+      TableName: !Sub ${Proyecto}-incidentes
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: zonaId, AttributeType: S }
+        - { AttributeName: estado, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: por-zona-estado
+          KeySchema: [{ AttributeName: zonaId, KeyType: HASH }, { AttributeName: estado, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+        - !If
+          - ConReplica
+          - Region: !Ref RegionReplica
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+          - !Ref AWS::NoValue
+
+  TablaClientes:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: EsPrincipal
+    Properties:
+      TableName: !Sub ${Proyecto}-clientes
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+        - !If
+          - ConReplica
+          - Region: !Ref RegionReplica
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+          - !Ref AWS::NoValue
+
+  TablaNotificaciones:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: EsPrincipal
+    Properties:
+      TableName: !Sub ${Proyecto}-notificaciones
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+        - !If
+          - ConReplica
+          - Region: !Ref RegionReplica
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+          - !Ref AWS::NoValue
+
+  TablaAgregados:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: EsPrincipal
+    Properties:
+      TableName: !Sub ${Proyecto}-agregados
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification: { StreamViewType: NEW_AND_OLD_IMAGES }
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      Replicas:
+        - Region: !Ref AWS::Region
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+        - !If
+          - ConReplica
+          - Region: !Ref RegionReplica
+            PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+          - !Ref AWS::NoValue
+
+  # ---------------- S3 (un bucket por region) ----------------
+  BucketDatos:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub ${Proyecto}-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration: { Status: Enabled }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+
+  # ---------------- SQS ----------------
+  ColaReportesDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${Proyecto}-reportes-dlq
+      MessageRetentionPeriod: 1209600
+  ColaReportes:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${Proyecto}-reportes
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt ColaReportesDLQ.Arn, maxReceiveCount: 3 }
+  ColaMetricasDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${Proyecto}-metricas-dlq
+      MessageRetentionPeriod: 1209600
+  ColaMetricas:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${Proyecto}-metricas
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt ColaMetricasDLQ.Arn, maxReceiveCount: 3 }
+
+  # ---------------- Alarmas ----------------
+  AlarmaDLQReportes:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${Proyecto}-dlq-reportes
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt ColaReportesDLQ.QueueName }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+  AlarmaDLQMetricas:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${Proyecto}-dlq-metricas
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt ColaMetricasDLQ.QueueName }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # ---------------- Parameter Store ----------------
+  # /redtelecorp/gcp/token es SecureString: CloudFormation no lo crea, va por CLI (ver README).
+  PUmbralCaida:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/umbrales/caida", Type: String, Value: "60" }
+  PUmbralSaturada:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/umbrales/saturada", Type: String, Value: "129" }
+  PReglaUsuarios:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/regla/usuarios", Type: String, Value: "10" }
+  PReglaHoras:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/regla/horas", Type: String, Value: "24" }
+  PPesosPrioridad:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${Proyecto}/prioridad/pesos"
+      Type: String
+      Value: '{"criticidad":{"RESIDENCIAL":1,"COMERCIAL":1.5,"EDUCATIVA":2,"INDUSTRIAL":2,"MEDICA":3,"CRITICA":3},"afectados":[[10,1],[100,2],[1000,3],[999999999,4]],"falla":{"INHABILITADA":3,"CAIDA":2,"SATURADA":1.5,"ANOMALIA":1.5,"NINGUNA":1},"bandas":[[9,"P1"],[4,"P2"],[2,"P3"],[0,"P4"]]}'
+  PUmbralAnomalia:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/ml/umbral_anomalia", Type: String, Value: "0.6" }
+  PRegionActiva:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/region_activa", Type: String, Value: "us-east-1" }
+  PGcpUrlPrincipal:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/gcp/url_principal", Type: String, Value: "pendiente" }
+  PGcpUrlSecundaria:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/gcp/url_secundaria", Type: String, Value: "pendiente" }
+  PRemitente:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/notif/remitente", Type: String, Value: "pendiente@correo.com" }
+
+Outputs:
+  BucketDatos:
+    Value: !Ref BucketDatos
+    Export: { Name: !Sub "${Proyecto}-bucket" }
+  ColaReportesUrl:
+    Value: !Ref ColaReportes
+    Export: { Name: !Sub "${Proyecto}-cola-reportes-url" }
+  ColaReportesArn:
+    Value: !GetAtt ColaReportes.Arn
+    Export: { Name: !Sub "${Proyecto}-cola-reportes-arn" }
+  ColaMetricasUrl:
+    Value: !Ref ColaMetricas
+    Export: { Name: !Sub "${Proyecto}-cola-metricas-url" }
+  ColaMetricasArn:
+    Value: !GetAtt ColaMetricas.Arn
+    Export: { Name: !Sub "${Proyecto}-cola-metricas-arn" }
