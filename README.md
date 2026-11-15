@@ -14,6 +14,10 @@ contracts/schemas/   JSON Schema de cada mensaje (fuente de verdad del formato)
 contracts/ejemplos/  un ejemplo válido de cada schema
 contracts/semilla/   zonas, antenas y clientes de prueba
 infra/template.yaml  base SAM: tablas, bucket, colas, parámetros y alarmas
+infra/lado-red.yaml  stack de B: Lambdas, Step Functions, Glue/Athena (ver §12)
+services/red/        código de B (Python 3.12)
+stepfunctions/       incidente.asl.json, diaria.asl.json
+tests/red/           20 tests con AWS simulado (moto)
 scripts/             validar_contratos.py, semilla.py
 ```
 
@@ -54,7 +58,8 @@ Prefijo: `redtelecorp`. Todo se llama igual en las dos regiones.
 | Bucket S3 | `redtelecorp-<cuenta>-<region>` |
 | Colas SQS | `redtelecorp-reportes` (+ `-dlq`), `redtelecorp-metricas` (+ `-dlq`) |
 | Step Functions | `redtelecorp-incidente`, `redtelecorp-diaria` |
-| Lambdas | `redtelecorp-procesar-reporte`, `-api-operador` (A) · `-simulador`, `-procesar-metricas`, `-entrenar` (B) |
+| Lambdas | `redtelecorp-procesar-reporte`, `-api-operador` (A) · `-simulador`, `-procesar-metricas`, `-entrenar`, `-incidente`, `-analitica` (B) |
+| Glue / Athena | base de datos `redtelecorp` (tablas `metricas`, `reportes`, `incidentes`) · workgroup `redtelecorp` |
 | Alarmas | `redtelecorp-dlq-reportes`, `redtelecorp-dlq-metricas` |
 
 ### Variables de entorno (todas las Lambdas)
@@ -100,13 +105,15 @@ Todas las tablas usan llaves `pk` / `sk` (string) y son Global Tables con PITR, 
 | pk | sk | Atributos |
 |---|---|---|
 | `INC#<codigo>` | `META` | `codigo, dni, numero, email, celular, canales[], lat, lon, antenaId, zonaId, fechaHoraUsuario, fechaRegistro, tipo, tipoIA, urgenciaIA, descripcion, estado, prioridad, incidenteId` |
-| `INC#<codigo>` | `HIST#<fechaISO>` | `estadoAnterior, estadoNuevo, actor, comentario` |
+| `INC#<codigo>` | `HIST#<fechaISO con microsegundos>` | `estadoAnterior, estadoNuevo, actor, comentario` (ej. `HIST#2026-11-15T04:35:12.123456Z`, para que ordene bien) |
 
 | GSI | Llaves | Uso |
 |---|---|---|
 | `por-zona` | `zonaId` + `fechaRegistro` | Regla de 24 h (A) y vincular reportes (B) |
 | `por-estado` | `estado` + `prioridad` | Panel del operador |
 | `por-dni` | `dni` + `fechaRegistro` | "Mis reportes" del usuario |
+
+**Ciclo que aplica la SF:** `REGISTRADA → EN_REVISION → EN_ATENCION → SOLUCIONADA → CERRADA`.
 
 **A tiene que escribir en META** `zonaId`, `fechaRegistro`, `estado`, `dni`, `canales`, `email` y `celular`. Sin esos campos la SF no puede vincular ni notificar.
 La **regla de 10** cuenta los `dni` distintos en `por-zona` con `fechaRegistro >= ahora − 24 h` y `estado != RECHAZADO`.
@@ -123,7 +130,8 @@ GSI `por-tipo` = `tipoEntidad` + `pk`. Para la antena más cercana, A hace `Quer
 ### `redtelecorp-incidentes` (escribe B)
 | pk | sk | Atributos |
 |---|---|---|
-| `INCID#<nombreEjecucion>` | `META` | `id, origen, evento, zonaId, antenas[], reportes, afectados, prioridad, estado, inicio, fin, detectadoPor (SUPERVISION\|USUARIOS), resumenIA, causaProbable, executionArn, taskToken` |
+| `INCID#<nombreEjecucion>` | `META` | `id, origen, evento, zonaId, antenas[], reportes, usuarios, afectados, prioridad, falla, estado, inicio, fin, duracionMin, detectadoPor (SUPERVISION\|USUARIOS), resumenIA, causaProbable, executionArn, taskToken, resolucion` |
+| `ZONALOCK#<zonaId>` | `META` | `incidenteId`. Es un lock interno de B (un incidente abierto por zona): **A lo ignora** |
 
 GSI `por-zona-estado` = `zonaId` + `estado`.
 
@@ -215,11 +223,13 @@ pk `AGG#<tipo>` (`ZONA`, `ANTENA`, `TIPO`, `DURACION`), sk `<YYYY-MM-DD>`, con `
 | Key | Escribe | Contenido |
 |---|---|---|
 | `metricas/dt=YYYY-MM-DD/hora=HH/<uuid>.jsonl` | B | Una línea por métrica: `{antenaId, ts, gbMin, estado, anomaliaScore}` |
-| `reportes/dt=YYYY-MM-DD/<codigo>.json` | A | Reporte **sin DNI ni contacto**: `dniHash` (sha256), `zonaId`, `antenaId`, `tipo`, `tipoIA`, `fechaRegistro`, `estado` |
+| `reportes/dt=YYYY-MM-DD/<codigo>.json` | A | Reporte **sin DNI ni contacto**: `codigo`, `dniHash` (sha256), `zonaId`, `antenaId`, `tipo`, `tipoIA`, `fechaRegistro`, `estado` |
 | `incidentes/dt=YYYY-MM-DD/<incidenteId>.json` | B | Incidente cerrado: `duracionMin`, `afectados`, `zonaId`, `antenas`, `detectadoPor`, `prioridad` |
 | `modelos/isoforest/<version>.joblib` + `modelos/isoforest/latest.json` | B | Modelo de ML; `latest.json` = `{ "version": "...", "entrenadoEn": "..." }` |
 
-Los prefijos `dt=` / `hora=` son para el partition projection de Athena (los arma B).
+Los prefijos `dt=` / `hora=` son para el partition projection de Athena (tablas en `infra/lado-red.yaml`).
+
+**Regla para Athena:** cada objeto JSON va en **una sola línea**. Nada de `indent`: `json.dumps(x, separators=(",", ":"))`.
 
 ---
 
@@ -235,6 +245,10 @@ Los prefijos `dt=` / `hora=` son para el partition projection de Athena (los arm
 | `gcp/url_principal` · `gcp/url_secundaria` | String | `pendiente` → URLs de Cloud Run | A y B |
 | `gcp/token` | **SecureString** | por CLI (sección 0) | A y B |
 | `notif/remitente` | String | correo verificado en SES | A y B |
+| `simulador/escenario` | String (JSON) | `{"tipo":"normal"}` (ver §12) | B |
+| `sf/espera_seg` · `sf/max_intentos` | String | `300` · `36` (cada cuánto se revisa la antena y cuántas veces antes de pasar al operador) | B |
+| `ml/racha` | String | `3` (métricas anómalas seguidas para disparar `ANOMALIA`) | B |
+| `recurrencia/min_fallas` | String | `3` (fallas en 7 días = problema estructural) | B |
 
 ---
 
@@ -255,10 +269,52 @@ Para la demo, cambien `email` / `celular` de algunos clientes por los del grupo 
 |---|---|
 | Incidencias con los campos de la sección 3 | Tablas, colas, bucket y parámetros (base desplegada) |
 | `StartExecution` según la sección 5 | Semilla de `red` y `clientes` |
-| `servicio-ia` desplegado y sus URLs en Parameter Store | `SF_INCIDENTE_ARN` |
+| `servicio-ia` desplegado y sus URLs en Parameter Store | `SF_INCIDENTE_ARN` (export `redtelecorp-sf-incidente-arn`) |
 | `SendTaskSuccess` desde el panel | `Agregados` diarios para el panel |
 
 **Cambiar un contrato:**
 1. Editar este README y el schema correspondiente.
 2. Correr `scripts/validar_contratos.py`.
 3. Avisar al otro **antes** de hacer el push.
+
+---
+
+## 12. Lado red (B): desplegar y probar
+
+**Requisitos:** AWS CLI, SAM CLI y Docker (para la imagen con scikit-learn). El stack base (§0) tiene que estar desplegado antes.
+
+```bash
+# Tests locales (AWS simulado con moto, no toca la cuenta)
+pip install -r tests/requirements.txt && python3 -m pytest -q tests/red
+
+# Learner Lab: no se pueden crear roles, se usa LabRole
+ROL=$(aws iam get-role --role-name LabRole --query Role.Arn --output text)
+
+# Build (necesita Docker) y deploy
+sam build --template-file infra/lado-red.yaml
+sam deploy --stack-name redtelecorp-red --region us-east-1 --resolve-s3 --resolve-image-repos \
+  --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --parameter-overrides RolArn=$ROL
+#   (en una cuenta normal, sin RolArn: el stack crea sus propios roles)
+
+# Primer modelo de ML (sin histórico entrena con tráfico sintético)
+aws lambda invoke --function-name redtelecorp-entrenar --cli-binary-format raw-in-base64-out \
+  --payload '{"dias":1}' /dev/stdout
+```
+
+**Escenarios de la demo** (el simulador los lee cada minuto):
+```bash
+esc() { aws ssm put-parameter --name /redtelecorp/simulador/escenario --type String --overwrite --value "$1"; }
+esc '{"tipo":"normal"}'
+esc '{"tipo":"caida_antena","objetivo":"A011"}'       # A011 < 60 GB/min  -> SF incidente (CAIDA)
+esc '{"tipo":"corte_zona","objetivo":"Z03"}'          # Z03 en 0          -> INHABILITADA
+esc '{"tipo":"saturacion_zona","objetivo":"Z02"}'     # > 129             -> SATURADA
+esc '{"tipo":"antena_inestable","objetivo":"A007"}'   # sin cruzar umbrales: solo el ML -> ANOMALIA
+# Para que la SF revise cada minuto en la demo (por defecto son 5):
+aws ssm put-parameter --name /redtelecorp/sf/espera_seg --type String --overwrite --value 60
+```
+
+**Dónde mirar:**
+- Step Functions → `redtelecorp-incidente`: el grafo de cada ejecución.
+- DynamoDB → `redtelecorp-red`: `estadoActual` y `anomaliaScore` de cada antena.
+- DynamoDB → `redtelecorp-incidentes`: los incidentes y su estado.
+- S3 → `metricas/` e `incidentes/`.

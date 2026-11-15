@@ -1,0 +1,388 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Red TeleCorp - LADO RED (persona B): simulador, procesar-metricas (ML), entrenar, incidente, analitica,
+  SF redtelecorp-incidente y redtelecorp-diaria, Glue/Athena y parametros de B.
+  Requiere el stack base (infra/template.yaml) desplegado antes en la misma region.
+
+Parameters:
+  Proyecto:
+    Type: String
+    Default: redtelecorp
+  RolArn:
+    Type: String
+    Default: ""
+    Description: AWS Academy / Learner Lab -> ARN de LabRole (no se pueden crear roles). Vacio = el stack crea sus roles.
+
+Conditions:
+  CrearRoles: !Equals [!Ref RolArn, ""]
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 256
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        PROYECTO: !Ref Proyecto
+        PARAM_PREFIX: !Sub "/${Proyecto}"
+        TABLA_INCIDENCIAS: !Sub ${Proyecto}-incidencias
+        TABLA_RED: !Sub ${Proyecto}-red
+        TABLA_INCIDENTES: !Sub ${Proyecto}-incidentes
+        TABLA_CLIENTES: !Sub ${Proyecto}-clientes
+        TABLA_NOTIFICACIONES: !Sub ${Proyecto}-notificaciones
+        TABLA_AGREGADOS: !Sub ${Proyecto}-agregados
+        BUCKET: !Sub ${Proyecto}-${AWS::AccountId}-${AWS::Region}
+        COLA_METRICAS_URL: !ImportValue
+          Fn::Sub: ${Proyecto}-cola-metricas-url
+        SF_INCIDENTE_ARN: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Proyecto}-incidente
+        GLUE_DB: !Ref Proyecto
+        ATHENA_WORKGROUP: !Ref Proyecto
+
+Resources:
+  # ---------------- Lambdas ----------------
+  FnSimulador:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Proyecto}-simulador
+      CodeUri: ../services/red/
+      Handler: simulador.handler
+      Runtime: python3.12
+      Role: !If [CrearRoles, !GetAtt RolLambda.Arn, !Ref RolArn]
+      Events:
+        CadaMinuto:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(1 minute)
+            RoleArn: !If [CrearRoles, !GetAtt RolScheduler.Arn, !Ref RolArn]
+
+  FnProcesarMetricas:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Proyecto}-procesar-metricas
+      PackageType: Image
+      ImageConfig:
+        Command: ["procesar_metricas.handler"]
+      Timeout: 120
+      MemorySize: 1024
+      Role: !If [CrearRoles, !GetAtt RolLambda.Arn, !Ref RolArn]
+      Events:
+        Metricas:
+          Type: SQS
+          Properties:
+            Queue: !ImportValue
+              Fn::Sub: ${Proyecto}-cola-metricas-arn
+            BatchSize: 50
+            MaximumBatchingWindowInSeconds: 5
+            FunctionResponseTypes: [ReportBatchItemFailures]
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ../services/red
+      DockerTag: ml-v1
+
+  FnEntrenar:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Proyecto}-entrenar
+      PackageType: Image
+      ImageConfig:
+        Command: ["entrenar.handler"]
+      Timeout: 600
+      MemorySize: 2048
+      Role: !If [CrearRoles, !GetAtt RolLambda.Arn, !Ref RolArn]
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ../services/red
+      DockerTag: ml-v1
+
+  FnIncidente:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Proyecto}-incidente
+      CodeUri: ../services/red/
+      Handler: incidente.handler
+      Runtime: python3.12
+      Timeout: 120
+      Role: !If [CrearRoles, !GetAtt RolLambda.Arn, !Ref RolArn]
+
+  FnAnalitica:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Proyecto}-analitica
+      CodeUri: ../services/red/
+      Handler: analitica.handler
+      Runtime: python3.12
+      Timeout: 300
+      Role: !If [CrearRoles, !GetAtt RolLambda.Arn, !Ref RolArn]
+
+  # ---------------- Step Functions ----------------
+  SfIncidente:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${Proyecto}-incidente
+      Type: STANDARD
+      DefinitionUri: ../stepfunctions/incidente.asl.json
+      DefinitionSubstitutions:
+        FnIncidente: !GetAtt FnIncidente.Arn
+        TablaIncidentes: !Sub ${Proyecto}-incidentes
+      Role: !If [CrearRoles, !GetAtt RolStates.Arn, !Ref RolArn]
+
+  SfDiaria:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${Proyecto}-diaria
+      Type: STANDARD
+      DefinitionUri: ../stepfunctions/diaria.asl.json
+      DefinitionSubstitutions:
+        FnAnalitica: !GetAtt FnAnalitica.Arn
+        FnEntrenar: !GetAtt FnEntrenar.Arn
+      Role: !If [CrearRoles, !GetAtt RolStates.Arn, !Ref RolArn]
+      Events:
+        Diario:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 7 * * ? *)
+            RoleArn: !If [CrearRoles, !GetAtt RolScheduler.Arn, !Ref RolArn]
+
+  # ---------------- Glue / Athena ----------------
+  BaseGlue:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref Proyecto
+
+  TablaGlueMetricas:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref BaseGlue
+      TableInput:
+        Name: metricas
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+          - { Name: dt, Type: string }
+          - { Name: hora, Type: string }
+        Parameters:
+          classification: json
+          projection.enabled: "true"
+          projection.dt.type: date
+          projection.dt.format: yyyy-MM-dd
+          projection.dt.range: "2026-11-01,NOW"
+          projection.dt.interval: "1"
+          projection.dt.interval.unit: DAYS
+          projection.hora.type: integer
+          projection.hora.range: "0,23"
+          projection.hora.digits: "2"
+          storage.location.template: !Sub "s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/metricas/dt=${!dt}/hora=${!hora}/"
+        StorageDescriptor:
+          Location: !Sub "s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/metricas/"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters: { ignore.malformed.json: "true" }
+          Columns:
+          - { Name: antenaId, Type: string }
+          - { Name: ts, Type: string }
+          - { Name: gbMin, Type: double }
+          - { Name: estado, Type: string }
+          - { Name: anomaliaScore, Type: double }
+  TablaGlueReportes:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref BaseGlue
+      TableInput:
+        Name: reportes
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+          - { Name: dt, Type: string }
+        Parameters:
+          classification: json
+          projection.enabled: "true"
+          projection.dt.type: date
+          projection.dt.format: yyyy-MM-dd
+          projection.dt.range: "2026-11-01,NOW"
+          projection.dt.interval: "1"
+          projection.dt.interval.unit: DAYS
+          storage.location.template: !Sub "s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/reportes/dt=${!dt}/"
+        StorageDescriptor:
+          Location: !Sub "s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/reportes/"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters: { ignore.malformed.json: "true" }
+          Columns:
+          - { Name: codigo, Type: string }
+          - { Name: dniHash, Type: string }
+          - { Name: zonaId, Type: string }
+          - { Name: antenaId, Type: string }
+          - { Name: tipo, Type: string }
+          - { Name: tipoIA, Type: string }
+          - { Name: fechaRegistro, Type: string }
+          - { Name: estado, Type: string }
+  TablaGlueIncidentes:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref BaseGlue
+      TableInput:
+        Name: incidentes
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+          - { Name: dt, Type: string }
+        Parameters:
+          classification: json
+          projection.enabled: "true"
+          projection.dt.type: date
+          projection.dt.format: yyyy-MM-dd
+          projection.dt.range: "2026-11-01,NOW"
+          projection.dt.interval: "1"
+          projection.dt.interval.unit: DAYS
+          storage.location.template: !Sub "s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/incidentes/dt=${!dt}/"
+        StorageDescriptor:
+          Location: !Sub "s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/incidentes/"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters: { ignore.malformed.json: "true" }
+          Columns:
+          - { Name: id, Type: string }
+          - { Name: origen, Type: string }
+          - { Name: evento, Type: string }
+          - { Name: zonaId, Type: string }
+          - { Name: antenas, Type: array<string> }
+          - { Name: afectados, Type: int }
+          - { Name: usuarios, Type: int }
+          - { Name: reportes, Type: int }
+          - { Name: prioridad, Type: string }
+          - { Name: inicio, Type: string }
+          - { Name: fin, Type: string }
+          - { Name: duracionMin, Type: double }
+          - { Name: detectadoPor, Type: string }
+          - { Name: falla, Type: string }
+          - { Name: resolucion, Type: string }
+
+  WorkgroupAthena:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Ref Proyecto
+      RecursiveDeleteOption: true
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/athena-resultados/
+
+  # ---------------- Parametros de B ----------------
+  PEscenario:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/simulador/escenario", Type: String, Value: '{"tipo":"normal"}' }
+  PEspera:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/sf/espera_seg", Type: String, Value: "300" }
+  PMaxIntentos:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/sf/max_intentos", Type: String, Value: "36" }
+  PRacha:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/ml/racha", Type: String, Value: "3" }
+  PMinFallas:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/recurrencia/min_fallas", Type: String, Value: "3" }
+
+  # ---------------- Roles (solo si NO se usa LabRole) ----------------
+  RolLambda:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: lambda.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole]
+      Policies:
+        - PolicyName: lado-red
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchWriteItem]
+                Resource:
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Proyecto}-*
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Proyecto}-*/index/*
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:ListBucket, s3:GetBucketLocation, s3:AbortMultipartUpload]
+                Resource:
+                  - !Sub arn:aws:s3:::${Proyecto}-${AWS::AccountId}-${AWS::Region}
+                  - !Sub arn:aws:s3:::${Proyecto}-${AWS::AccountId}-${AWS::Region}/*
+              - Effect: Allow
+                Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+                Resource: !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${Proyecto}-metricas
+              - Effect: Allow
+                Action: [ssm:GetParameter]
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Proyecto}/*
+              - Effect: Allow
+                Action: [states:StartExecution]
+                Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Proyecto}-incidente
+              - Effect: Allow
+                Action: [ses:SendEmail, sns:Publish]
+                Resource: "*"
+              - Effect: Allow
+                Action: [athena:StartQueryExecution, athena:GetQueryExecution, athena:GetQueryResults]
+                Resource: !Sub arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${Proyecto}
+              - Effect: Allow
+                Action: [glue:GetDatabase, glue:GetTable, glue:GetPartitions]
+                Resource:
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/${Proyecto}
+                  - !Sub arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/${Proyecto}/*
+
+  RolStates:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: states.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: sf-lado-red
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${Proyecto}-incidente
+                  - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${Proyecto}-analitica
+                  - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${Proyecto}-entrenar
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${Proyecto}-incidentes
+
+  RolScheduler:
+    Type: AWS::IAM::Role
+    Condition: CrearRoles
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: scheduler.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: scheduler-lado-red
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${Proyecto}-simulador
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Proyecto}-diaria
+
+Outputs:
+  SfIncidenteArn:
+    Value: !Ref SfIncidente
+    Export: { Name: !Sub "${Proyecto}-sf-incidente-arn" }
+  SfDiariaArn:
+    Value: !Ref SfDiaria

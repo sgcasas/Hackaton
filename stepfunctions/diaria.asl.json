@@ -1,0 +1,224 @@
+{
+  "Comment": "Red TeleCorp - tareas diarias: recurrencia (P7), agregados (P6/P10) y reentrenamiento del ML",
+  "StartAt": "SoyRegionActiva",
+  "States": {
+    "SoyRegionActiva": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnAnalitica}",
+        "Payload": {
+          "accion": "region"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.reg",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Activa"
+    },
+    "Activa": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.reg.p.activa",
+          "BooleanEquals": false,
+          "Next": "RegionPasiva"
+        }
+      ],
+      "Default": "Tareas"
+    },
+    "RegionPasiva": {
+      "Type": "Succeed"
+    },
+    "Tareas": {
+      "Type": "Parallel",
+      "End": true,
+      "Branches": [
+        {
+          "StartAt": "Recurrencia",
+          "States": {
+            "Recurrencia": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${FnAnalitica}",
+                "Payload": {
+                  "accion": "recurrencia"
+                }
+              },
+              "ResultSelector": {
+                "p.$": "$.Payload"
+              },
+              "ResultPath": "$.r",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 4,
+                  "BackoffRate": 2
+                },
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed"
+                  ],
+                  "IntervalSeconds": 3,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ],
+              "End": true,
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "RecurrenciaFallo"
+                }
+              ]
+            },
+            "RecurrenciaFallo": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Agregados",
+          "States": {
+            "Agregados": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${FnAnalitica}",
+                "Payload": {
+                  "accion": "agregados"
+                }
+              },
+              "ResultSelector": {
+                "p.$": "$.Payload"
+              },
+              "ResultPath": "$.r",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 4,
+                  "BackoffRate": 2
+                },
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed"
+                  ],
+                  "IntervalSeconds": 3,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ],
+              "End": true,
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "AgregadosFallo"
+                }
+              ]
+            },
+            "AgregadosFallo": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "Reentrenar",
+          "States": {
+            "Reentrenar": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${FnEntrenar}",
+                "Payload": {
+                  "dias": 7
+                }
+              },
+              "ResultSelector": {
+                "p.$": "$.Payload"
+              },
+              "ResultPath": "$.r",
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 4,
+                  "BackoffRate": 2
+                },
+                {
+                  "ErrorEquals": [
+                    "States.TaskFailed"
+                  ],
+                  "IntervalSeconds": 3,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2
+                }
+              ],
+              "End": true,
+              "Catch": [
+                {
+                  "ErrorEquals": [
+                    "States.ALL"
+                  ],
+                  "ResultPath": "$.error",
+                  "Next": "ReentrenarFallo"
+                }
+              ]
+            },
+            "ReentrenarFallo": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+boto3
+moto[all]>=5
+pytest
+scikit-learn>=1.5,<2
+numpy
+joblib
+jsonschema

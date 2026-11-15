@@ -31,14 +31,15 @@ Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`
 - [ ] Portal del usuario + panel del operador, con failover a la segunda API.
 
 ### Fase 1B: lado red (Casas)
+> Código y tests listos (`services/red`, `stepfunctions/`, `infra/lado-red.yaml`, 20 tests). **Falta el deploy (README §12).**
 - [x] Datos semilla (`scripts/semilla.py`).
-- [ ] λ simulador + EventBridge (1 min) → SQS `metricas`, con escenarios: normal, corte de zona, antena inestable.
-- [ ] λ procesar-métricas: umbrales, estado de la antena en `Red`, `FALLA#`, escritura en S3 e inicio de la SF si cambia el estado.
-- [ ] SF incidente: crear, vincular, notificar (deduplicado), verificar antenas, prioridad, `/resumir`, esperar restablecimiento, cerrar y guardar en S3.
-- [ ] Notificaciones directas desde la SF (SES y SNS).
-- [ ] ML: λ entrenar (contenedor, Isolation Forest con el histórico de S3) → `modelos/`. Inferencia dentro de procesar-métricas → evento `ANOMALIA`.
-- [ ] SF diaria: recurrencia (Athena → `estructural`), analítica (→ `Agregados`) y reentrenamiento.
-- [ ] Glue/Athena: tablas con partition projection sobre los prefijos de README §8.
+- [x] λ simulador + EventBridge (1 min) → SQS `metricas`, con escenarios: normal, corte de zona, antena inestable.
+- [x] λ procesar-métricas: umbrales, estado de la antena en `Red`, `FALLA#`, escritura en S3 e inicio de la SF si cambia el estado.
+- [x] SF incidente: crear, vincular, notificar (deduplicado), verificar antenas, prioridad, `/resumir`, esperar restablecimiento, cerrar y guardar en S3.
+- [x] Notificaciones directas desde la SF (SES y SNS).
+- [x] ML: λ entrenar (contenedor, Isolation Forest con el histórico de S3) → `modelos/`. Inferencia dentro de procesar-métricas → evento `ANOMALIA`.
+- [x] SF diaria: recurrencia (Athena → `estructural`), analítica (→ `Agregados`) y reentrenamiento.
+- [x] Glue/Athena: tablas con partition projection sobre los prefijos de README §8.
 
 ### Fase 2: integración (juntos)
 - [ ] De punta a punta: 15 reportes de una zona → incidente colectivo → notificaciones → cierre.

@@ -1,0 +1,751 @@
+{
+  "Comment": "Red TeleCorp - ciclo de vida de un incidente (README §5). Input: contracts/schemas/sf-incidente.input.schema.json",
+  "StartAt": "Abrir",
+  "States": {
+    "Abrir": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "abrir",
+          "entrada.$": "$",
+          "ejecucion.$": "$$.Execution.Name",
+          "executionArn.$": "$$.Execution.Id"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.abrir",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Comment": "Crea el incidente o se une al abierto de la zona (lock por zona)",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "FalloAlAbrir"
+        }
+      ],
+      "Next": "YaExistia"
+    },
+    "YaExistia": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.abrir.p.existente",
+          "BooleanEquals": true,
+          "Next": "UnidoAIncidenteAbierto"
+        }
+      ],
+      "Default": "Vincular"
+    },
+    "UnidoAIncidenteAbierto": {
+      "Type": "Succeed"
+    },
+    "Vincular": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "vincular",
+          "incidenteId.$": "$.abrir.p.incidenteId"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.vin",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "NotificarEvaluacion"
+    },
+    "NotificarEvaluacion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "notificar",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "estado": "EN_REVISION"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.n1",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "VerificarInfraestructura"
+    },
+    "VerificarInfraestructura": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "verificar",
+          "incidenteId.$": "$.abrir.p.incidenteId"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.ver",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "CalcularPrioridad"
+    },
+    "CalcularPrioridad": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "prioridad",
+          "incidenteId.$": "$.abrir.p.incidenteId"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.pri",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "HayFalla"
+    },
+    "HayFalla": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.ver.p.falla",
+          "StringEquals": "NINGUNA",
+          "Next": "EsperarOperador"
+        }
+      ],
+      "Default": "ResumenIA"
+    },
+    "ResumenIA": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "resumir",
+          "incidenteId.$": "$.abrir.p.incidenteId"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.ia",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "EnAtencion"
+    },
+    "EnAtencion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "estado",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "estadoIncidente": "EN_ATENCION",
+          "estadoIncidencias": "EN_ATENCION"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.st1",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "NotificarAtencion"
+    },
+    "NotificarAtencion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "notificar",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "estado": "EN_ATENCION"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.n2",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "EsperarRestablecimiento"
+    },
+    "EsperarRestablecimiento": {
+      "Type": "Wait",
+      "SecondsPath": "$.abrir.p.esperaSeg",
+      "Next": "RevisarRestablecimiento"
+    },
+    "RevisarRestablecimiento": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "revisar",
+          "incidenteId.$": "$.abrir.p.incidenteId"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.rev",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "Restablecido"
+    },
+    "Restablecido": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.rev.p.restablecido",
+          "BooleanEquals": true,
+          "Next": "Solucionada"
+        },
+        {
+          "Variable": "$.rev.p.agotado",
+          "BooleanEquals": true,
+          "Next": "EsperarOperador"
+        }
+      ],
+      "Default": "EsperarRestablecimiento"
+    },
+    "EsperarOperador": {
+      "Type": "Task",
+      "Comment": "api-operador (A) responde con SendTaskSuccess {resolucion, comentario}",
+      "Resource": "arn:aws:states:::dynamodb:updateItem.waitForTaskToken",
+      "Parameters": {
+        "TableName": "${TablaIncidentes}",
+        "Key": {
+          "pk": {
+            "S.$": "States.Format('INCID#{}', $.abrir.p.incidenteId)"
+          },
+          "sk": {
+            "S": "META"
+          }
+        },
+        "UpdateExpression": "SET taskToken = :t, estado = :e",
+        "ExpressionAttributeValues": {
+          ":t": {
+            "S.$": "$$.Task.Token"
+          },
+          ":e": {
+            "S": "ESPERANDO_OPERADOR"
+          }
+        }
+      },
+      "TimeoutSeconds": 86400,
+      "ResultPath": "$.op",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.Timeout"
+          ],
+          "ResultPath": "$.timeoutOperador",
+          "Next": "Solucionada"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "GuardarResolucion"
+    },
+    "GuardarResolucion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${TablaIncidentes}",
+        "Key": {
+          "pk": {
+            "S.$": "States.Format('INCID#{}', $.abrir.p.incidenteId)"
+          },
+          "sk": {
+            "S": "META"
+          }
+        },
+        "UpdateExpression": "SET resolucion = :r, comentarioOperador = :c REMOVE taskToken",
+        "ExpressionAttributeValues": {
+          ":r": {
+            "S.$": "$.op.resolucion"
+          },
+          ":c": {
+            "S.$": "$.op.comentario"
+          }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "Solucionada"
+    },
+    "Solucionada": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "estado",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "estadoIncidente": "RESTABLECIDO",
+          "estadoIncidencias": "SOLUCIONADA"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.st2",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "NotificarSolucion"
+    },
+    "NotificarSolucion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "notificar",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "estado": "SOLUCIONADA"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.n3",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "Next": "Cerrar"
+    },
+    "Cerrar": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "cerrar",
+          "incidenteId.$": "$.abrir.p.incidenteId"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.cierre",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "RegistrarError"
+        }
+      ],
+      "End": true
+    },
+    "RegistrarError": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "error",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "causa.$": "$.error"
+        }
+      },
+      "ResultSelector": {
+        "p.$": "$.Payload"
+      },
+      "ResultPath": "$.err",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 4,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Fallo"
+    },
+    "Fallo": {
+      "Type": "Fail",
+      "Error": "IncidenteFallido",
+      "Cause": "Ver logs de redtelecorp-incidente"
+    },
+    "FalloAlAbrir": {
+      "Type": "Fail",
+      "Error": "NoSePudoAbrir",
+      "Cause": "Ver logs de redtelecorp-incidente"
+    }
+  }
+}

@@ -25,7 +25,7 @@
 
 ---
 
-## 1. Componentes (diseño final, 25)
+## 1. Componentes (diseño final: 25 en el harness, 27 en la implementación; ver §11)
 
 **Global**
 - CloudFront + S3: portal del usuario y panel del operador.
@@ -45,6 +45,8 @@
 | SF incidente | Flujo de vida de un incidente (sección 3) |
 | SF diaria | Recurrencia, analítica y reentrenamiento del ML |
 | λ entrenar (contenedor) | Entrena el Isolation Forest con el histórico de S3 |
+| λ incidente | Los pasos con lógica de SF incidente: abrir/unirse, vincular, notificar (deduplicado), verificar, prioridad, resumen IA, cerrar |
+| λ analitica | Las consultas en Athena de SF diaria: recurrencia y agregados |
 | DynamoDB Global Table | Incidencias, Red, Incidentes, Clientes, Notificaciones, Agregados |
 | S3 (un bucket) | `metricas/`, `reportes/`, `incidentes/`, `modelos/` con replicación a la otra región |
 | Athena | Consultas sobre el histórico |
@@ -105,7 +107,8 @@ Inicio (origen = ZONA | ANTENA)
           → Operador revisa (waitForTaskToken desde el panel) → Notificar
  → Cerrar: duración, afectados y detectadoPor (SUPERVISION | USUARIOS) → S3 incidentes/
 ```
-- **Notificar** no usa Lambda: Step Functions llama directo a DynamoDB (`PutItem` condicional sobre `NOTIF#incidente#estado#usuario`), y solo si la escritura pasa llama a SES o SNS. Si el paso se reintenta, **no se manda dos veces**.
+- **Notificar** lo hace λ incidente: primero un `PutItem` condicional sobre `NOTIF#incidente#estado#usuario` y, solo si pasa, envía por SES o SNS. Si el paso se reintenta, **no se manda dos veces**.
+- **Esperar al operador** sí es directo: Step Functions guarda el `taskToken` en DynamoDB (`updateItem.waitForTaskToken`).
 - Todos los pasos tienen `Retry` con backoff y `Catch`.
 
 ### 3.2 SF diaria (EventBridge, 1 vez al día)
@@ -212,7 +215,7 @@ GSIs: `zona + fechaRegistro` (regla de 24 h), `estado + prioridad` (panel) y `us
 | 1 | Unir SF recurrencia + analítica + reentrenar en **SF diaria** | ✅ aceptada |
 | 2 | Unir SF falla de antena dentro de **SF incidente** | ✅ aceptada |
 | 3 | Quitar Streams + λ evaluar-zona (la cuenta la hace procesar-reporte) | ✅ aceptada |
-| 4 | Quitar λ notificar (SF llama directo a SES, SNS y DynamoDB) | ✅ aceptada |
+| 4 | Quitar λ notificar (SF llama directo a SES, SNS y DynamoDB) | ✅ aceptada (en la implementación vive dentro de λ incidente, ver abajo) |
 | 5 | Secrets Manager → Parameter Store SecureString | ✅ aceptada |
 | 6 | Route 53 → failover en el cliente | ✅ aceptada |
 | 7 | Quitar Firehose (las Lambdas y las SF escriben directo a S3) | ✅ aceptada |
@@ -229,6 +232,8 @@ GSIs: `zona + fechaRegistro` (regla de 24 h), `estado + prioridad` (panel) y `us
 | 18 | Quitar la Global Table | ❌ falla HA-PERS |
 
 Desde la #9 en adelante todo falla: ese es el límite de la simplificación.
+
+**Ajuste al implementar:** la lógica de las SF (vincular, verificar, prioridad, notificar deduplicado, recurrencia y agregados) quedó en **2 Lambdas** (`incidente` y `analitica`) en lugar de escribirse en ASL puro. En ASL era frágil y no se podía probar sin desplegar; así queda cubierta por 20 tests. Las SF siguen orquestando: esperas, decisiones, `waitForTaskToken`, reintentos y la ejecución en paralelo.
 
 **Descartada por criterio** (el harness no la detecta): juntar SF incidente y SF diaria en una sola. Pasaría los checks, pero mezcla dos flujos sin relación y empeora la nota de "Arquitectura".
 
@@ -250,7 +255,8 @@ Desde la #9 en adelante todo falla: ese es el límite de la simplificación.
 ## 13. Estructura del repo
 ```
 /infra          template.yaml (SAM, 2 regiones) + deploy de GCP
-/services       procesar-reporte, procesar-metricas (Dockerfile), entrenar (Dockerfile), api-operador, simulador
+/services/red  simulador, procesar_metricas + entrenar (Dockerfile), incidente, analitica, modelo_ml (B)
+/services/...  procesar-reporte, api-operador (A)
 /stepfunctions  incidente.asl.json, diaria.asl.json
 /gcp/servicio-ia
 /frontend       portal + panel (con failover a la 2ª API)
