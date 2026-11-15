@@ -27,8 +27,8 @@ def generar():
     for z, _, _, la, lo in ZONAS:
         for _ in range(5):
             antenas.append({"pk": f"ANTENA#A{k:03d}", "sk": "META", "tipoEntidad": "ANTENA", "antenaId": f"A{k:03d}",
-                            "zonaId": z, "lat": round(la + random.uniform(-.008, .008), 5),
-                            "lon": round(lo + random.uniform(-.008, .008), 5),
+                            "zonaId": z, "lat": round(la + random.uniform(-.004, .004), 5),
+                            "lon": round(lo + random.uniform(-.004, .004), 5),
                             "usuariosEstimados": random.choice([300, 800, 1500, 3000]),
                             "estadoActual": "NORMAL", "ultimoGB": 95.0, "desde": "2026-11-15T00:00:00Z",
                             "anomaliaScore": 0.0, "estructural": False})

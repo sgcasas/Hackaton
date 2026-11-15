@@ -118,7 +118,8 @@ def vincular(ev):
             continue
         if i.get("incidenteId") is None:
             _cambiar_estado_incidencia(i["codigo"], i["estado"], destino if i["estado"] == "REGISTRADA" else i["estado"],
-                                       f"Vinculada al incidente {inc['id']}", {"incidenteId": inc["id"]})
+                                       f"Vinculada al incidente {inc['id']}",
+                                       {"incidenteId": inc["id"], "prioridad": inc.get("prioridad", "P4")})
             nuevas += 1
         todas.append(i)
     usuarios = len({i["dni"] for i in todas})

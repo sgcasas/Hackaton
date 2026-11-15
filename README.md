@@ -41,6 +41,16 @@ python3 scripts/semilla.py --cargar        # usa AWS_REGION=us-east-1
 pip install jsonschema && python3 scripts/validar_contratos.py
 ```
 
+**Stacks:**
+| Stack | Template | De quién |
+|---|---|---|
+| `redtelecorp-base` | `infra/template.yaml` | B |
+| `redtelecorp-red` | `infra/lado-red.yaml` | B |
+| `redtelecorp-usuario` | `infra/usuario.yaml` | A |
+| `redtelecorp-frontend` | `infra/frontend.yaml` | A |
+
+Orden: base → red → usuario → frontend. La SF tiene que existir antes de que A empiece a recibir reportes.
+
 **Fase 3 (multi-región):**
 - volver a desplegar us-east-1 con `RegionReplica=us-west-2`, para que las tablas se repliquen;
 - desplegar el mismo template en us-west-2 con `EsRegionPrincipal=false`;
@@ -104,7 +114,7 @@ Todas las tablas usan llaves `pk` / `sk` (string) y son Global Tables con PITR, 
 ### `redtelecorp-incidencias` (escribe A; la SF de B actualiza el estado)
 | pk | sk | Atributos |
 |---|---|---|
-| `INC#<codigo>` | `META` | `codigo, dni, numero, email, celular, canales[], lat, lon, antenaId, zonaId, fechaHoraUsuario, fechaRegistro, tipo, tipoIA, urgenciaIA, descripcion, estado, prioridad, incidenteId` |
+| `INC#<codigo>` | `META` | `codigo, dni, numero, nombre, email, celular, canales[], lat, lon, antenaId, zonaId, fechaHoraUsuario, fechaRegistro, tipo, tipoIA, urgenciaIA, descripcion, estado, prioridad, incidenteId, motivoRechazo` |
 | `INC#<codigo>` | `HIST#<fechaISO con microsegundos>` | `estadoAnterior, estadoNuevo, actor, comentario` (ej. `HIST#2026-11-15T04:35:12.123456Z`, para que ordene bien) |
 
 | GSI | Llaves | Uso |
@@ -112,6 +122,9 @@ Todas las tablas usan llaves `pk` / `sk` (string) y son Global Tables con PITR, 
 | `por-zona` | `zonaId` + `fechaRegistro` | Regla de 24 h (A) y vincular reportes (B) |
 | `por-estado` | `estado` + `prioridad` | Panel del operador |
 | `por-dni` | `dni` + `fechaRegistro` | "Mis reportes" del usuario |
+
+- **`prioridad`** se guarda en `P4` al crear la incidencia, porque sin ese atributo no aparece en el GSI `por-estado`. La SF la reemplaza por la del incidente, también en las incidencias que se vinculan después.
+- **`motivoRechazo`** solo va cuando `estado = RECHAZADO`: `CLIENTE_NO_VALIDO` o `TOPE_DE_REPORTES`.
 
 **Ciclo que aplica la SF:** `REGISTRADA → EN_REVISION → EN_ATENCION → SOLUCIONADA → CERRADA`.
 
@@ -130,7 +143,7 @@ GSI `por-tipo` = `tipoEntidad` + `pk`. Para la antena más cercana, A hace `Quer
 ### `redtelecorp-incidentes` (escribe B)
 | pk | sk | Atributos |
 |---|---|---|
-| `INCID#<nombreEjecucion>` | `META` | `id, origen, evento, zonaId, antenas[], reportes, usuarios, afectados, prioridad, falla, estado, inicio, fin, duracionMin, detectadoPor (SUPERVISION\|USUARIOS), resumenIA, causaProbable, executionArn, taskToken, resolucion` |
+| `INCID#<nombreEjecucion>` | `META` | `id` (= nombre de la ejecución, ej. `zona-Z03-2026111504`), `origen, evento, zonaId, antenas[], reportes` (**número**), `usuarios` (número de DNI distintos), `afectados, prioridad, falla, estado, inicio, fin, duracionMin, detectadoPor (SUPERVISION\|USUARIOS), resumenIA, causaProbable, executionArn, taskToken, resolucion` |
 | `ZONALOCK#<zonaId>` | `META` | `incidenteId`. Es un lock interno de B (un incidente abierto por zona): **A lo ignora** |
 
 GSI `por-zona-estado` = `zonaId` + `estado`.
@@ -155,7 +168,7 @@ pk `AGG#<tipo>` (`ZONA`, `ANTENA`, `TIPO`, `DURACION`), sk `<YYYY-MM-DD>`, con `
 | `redtelecorp-reportes` | API Gateway (A) | λ procesar-reporte (A) | `contracts/schemas/reporte.sqs.schema.json` | `contracts/ejemplos/reporte.sqs.json` |
 | `redtelecorp-metricas` | λ simulador (B) | λ procesar-métricas (B) | `metrica.sqs.schema.json` | `metrica.sqs.json` |
 
-- En `reporte.sqs`, `codigo` y `fechaRegistro` los agrega el mapping template de API Gateway (`$context.requestId`, `$context.requestTimeEpoch`). El resto viene del portal.
+- En `reporte.sqs`, `codigo` y `fechaRegistro` los agrega API Gateway como **atributos del mensaje** (`codigo` = `$context.requestId`, `fechaRegistro` = `$context.requestTimeEpoch` en ms). `procesar-reporte` los junta con el cuerpo y convierte la fecha a ISO con `Z`. El schema describe el reporte **ya combinado**.
 - Las colas tienen `maxReceiveCount = 3` y, después, DLQ con alarma. Los consumidores deben ser **idempotentes**, usando `codigo` como llave.
 
 ---
@@ -174,6 +187,7 @@ pk `AGG#<tipo>` (`ZONA`, `ANTENA`, `TIPO`, `DURACION`), sk `<YYYY-MM-DD>`, con `
 | B (procesar-métricas) | La antena cambia de estado o hay anomalía | `antena-<antenaId>-<evento>-<yyyyMMddHHmm>` |
 
 - Si `StartExecution` devuelve `ExecutionAlreadyExists`, se **ignora**: ya se está atendiendo.
+- Si falla por otra razón (por ejemplo, la SF todavía no existe), A no reintenta ese mensaje: el siguiente reporte de la zona vuelve a disparar la regla. Por eso hay que desplegar el stack `redtelecorp-red` antes que `redtelecorp-usuario`.
 - **A no tiene que revisar si hay un incidente abierto.** La SF lo hace: si la zona ya tiene uno, vincula los reportes nuevos y termina.
 
 **Qué hace la SF con los datos de A:**
@@ -200,6 +214,7 @@ pk `AGG#<tipo>` (`ZONA`, `ANTENA`, `TIPO`, `DURACION`), sk `<YYYY-MM-DD>`, con `
 
 - Header: `Authorization: Bearer <token>` (`/redtelecorp/gcp/token`).
 - URLs: `/redtelecorp/gcp/url_principal` (us-east4) y `/redtelecorp/gcp/url_secundaria` (us-central1).
+- La respuesta dice quién contestó en el header **`X-Fuente-IA`**: `gemini` o `reglas`. El cuerpo no lo incluye porque los schemas no admiten campos extra. Si Gemini falla, servicio-ia responde igual con reglas simples.
 - **Timeout de 8 s.** Quien llama prueba la principal, luego la secundaria y, si ambas fallan, sigue **sin IA**: usa el `tipo` del usuario y deja el resumen vacío.
 
 ---
@@ -239,6 +254,7 @@ Los prefijos `dt=` / `hora=` son para el partition projection de Athena (tablas 
 |---|---|---|---|
 | `umbrales/caida` · `umbrales/saturada` | String | `60` · `129` | B |
 | `regla/usuarios` · `regla/horas` | String | `10` · `24` | A |
+| `regla/tope_dni` | String | `5` (máximo de reportes por DNI en la ventana; lo crea el stack de A) | A |
 | `prioridad/pesos` | String (JSON) | ver `infra/template.yaml` | B |
 | `ml/umbral_anomalia` | String | `0.6` | B |
 | `region_activa` | String | `us-east-1` | A y B |

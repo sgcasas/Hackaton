@@ -131,3 +131,16 @@ def test_prioridad_segun_zona_y_falla(aws):
     assert incidente.calcular_prioridad("RESIDENCIAL", 5, "NINGUNA", pesos)[0] == "P4"
     assert incidente.calcular_prioridad("RESIDENCIAL", 300, "CAIDA", pesos)[0] == "P2"
     assert incidente.calcular_prioridad("EDUCATIVA", 50, "SATURADA", pesos)[0] == "P2"
+
+
+def test_vinculada_tarde_hereda_prioridad(zona_con_reportes):
+    ent = {"origen": "ZONA", "evento": "COLECTIVO", "zonaId": "Z03", "antenaId": None, "detectadoEn": comun.iso(comun.ahora())}
+    iid = incidente.handler({"accion": "abrir", "entrada": ent, "ejecucion": "zona-Z03-p"}, None)["incidenteId"]
+    incidente.handler({"accion": "vincular", "incidenteId": iid}, None)
+    _antena("A011", estadoActual="CAIDA")
+    incidente.handler({"accion": "verificar", "incidenteId": iid}, None)
+    p = incidente.handler({"accion": "prioridad", "incidenteId": iid}, None)["prioridad"]
+    _incidencia(50, hace_min=1)  # llega después de calcular la prioridad
+    incidente.handler({"accion": "vincular", "incidenteId": iid}, None)
+    nueva = comun.de_ddb(comun.tabla("incidencias").get_item(Key={"pk": "INC#cod-Z03-50", "sk": "META"})["Item"])
+    assert nueva["incidenteId"] == iid and nueva["prioridad"] == p
