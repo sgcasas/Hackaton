@@ -41,7 +41,7 @@ Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`
 
 ### Fase 2: integración
 - [x] Antena cae → SF abre el incidente (P2, `detectadoPor = SUPERVISION`) → espera → se cierra sola y queda en S3 (probado con A011).
-- [ ] **SES:** verificar los correos del grupo (clic en el correo de AWS), poner `notif/remitente` y asignar esos correos a los clientes 1–30 (`scripts/correos_demo.py`).
+- [x] Correos: SES está bloqueado en el Lab, así que se usa el tema SNS `redtelecorp-avisos`, con los 2 correos suscritos y confirmados. Clientes 1–30 con esos correos.
 - [ ] **Operador de Cognito:** crearlo. La contraseña la pone Casas.
 - [ ] De punta a punta: 15 reportes de una zona (`scripts/pico.py --zona Z06 --n 15`) → incidente colectivo → correos → cierre.
 - [ ] Antena inestable (escenario `antena_inestable`) → el ML la detecta antes que los usuarios.
@@ -50,12 +50,11 @@ Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`
 - [ ] Correr la SF diaria a mano una vez (Athena → `Agregados`) para que el panel tenga analítica.
 
 ### Fase 3: multi-región
-- [ ] Desplegar en us-west-2 (base con `EsRegionPrincipal=false`, red, usuario) y agregar la réplica `RegionReplica=us-west-2` a la base de us-east-1.
-- [ ] Poner las 2 APIs en `frontend/public/config.json` y volver a subir el frontend.
-- [ ] Probar el failover: apagar la API de us-east-1 y ver que el portal pasa a us-west-2.
+- [x] Intentado: las réplicas de Global Tables hacia us-west-2 se quedan en `CREATING` o fallan en el Lab (README §13). Hoy corre en una sola región.
+- [ ] Decidir cómo mostrarlo en el video: explicar el diseño multi-región (diagrama + script `REGIONES=...`) y la limitación del Lab.
 
 ### Fase 4: entrega
-- [ ] Actualizar `ARQUITECTURA.drawio`: el frontend es S3 sin CloudFront, y `incidente`/`analitica` son Lambdas.
+- [ ] Actualizar `ARQUITECTURA.drawio`: el frontend es S3 sin CloudFront, `incidente`/`analitica` son Lambdas, y los correos van por el tema SNS.
 - [ ] Exportar el diagrama a PNG.
 - [ ] Guion del video (≤ 5 min, ARQUITECTURA §14), grabación y edición.
 - [ ] Revisar el repo: **nada que parezca un informe**.

@@ -334,3 +334,26 @@ aws ssm put-parameter --name /redtelecorp/sf/espera_seg --type String --overwrit
 - DynamoDB → `redtelecorp-red`: `estadoActual` y `anomaliaScore` de cada antena.
 - DynamoDB → `redtelecorp-incidentes`: los incidentes y su estado.
 - S3 → `metricas/` e `incidentes/`.
+
+---
+
+## 13. Despliegue real (Learner Lab, 15-nov-2026)
+
+| | URL |
+|---|---|
+| Portal (HTTPS, permite usar la ubicación) | https://redtelecorp-web-506630903590.s3.us-east-1.amazonaws.com/index.html |
+| Portal (HTTP) | http://redtelecorp-web-506630903590.s3-website-us-east-1.amazonaws.com |
+| API us-east-1 | https://0mbbbg8sf3.execute-api.us-east-1.amazonaws.com/prod |
+
+Se despliega con `bash scripts/deploy-aws.sh correo1 correo2` desde una máquina con Docker (se usó la VM "MV Dev" del Lab).
+
+**Lo que el Learner Lab no permite, y cómo quedó:**
+| Bloqueado | Solución |
+|---|---|
+| Crear roles IAM | Todo usa `LabRole` (parámetro `RolArn`) |
+| CloudFront (`CreateDistribution` y `CreateOriginAccessControl`) | Portal en S3. HTTPS por el endpoint REST del bucket |
+| SES (`VerifyEmailIdentity`) | Avisos por correo por el tema SNS `redtelecorp-avisos`: un correo por incidente y estado, a los correos suscritos (cada uno confirma una vez). El SMS sigue por SNS |
+| Step Functions `dynamodb:updateItem.waitForTaskToken` | No existe: la espera del operador usa `lambda:invoke.waitForTaskToken` |
+| Réplicas de Global Tables hacia us-west-2 | Se quedan en `CREATING` o fallan con `UnrecognizedClientException`. **Hoy la solución corre en una sola región.** El diseño multi-región está en `ARQUITECTURA.md` y el script lo soporta con `REGIONES="us-east-1 us-west-2"` en una cuenta normal |
+
+**Parámetro nuevo:** `/redtelecorp/notif/topic_arn` (lo crea `infra/lado-red.yaml`). `procesar-reporte` y la SF lo usan para los correos.
