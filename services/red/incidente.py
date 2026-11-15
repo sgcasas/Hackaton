@@ -130,39 +130,51 @@ def vincular(ev):
     return {"vinculadas": nuevas, "reportes": len(todas), "usuarios": usuarios}
 
 
+def _marcar(pk, canal):
+    """PutItem condicional (README §3/§7). True si es la primera vez."""
+    try:
+        comun.tabla("notificaciones").put_item(
+            Item={"pk": pk, "canal": canal, "enviadoEn": comun.iso(comun.ahora()), "ttl": comun.ttl_dias(30)},
+            ConditionExpression="attribute_not_exists(pk)")
+        return True
+    except ClientError as err:
+        if _cond_fallida(err):
+            return False
+        raise
+
+
 def notificar(ev):
-    """Deduplicado por NOTIF#<incidenteId>#<estado>#<dni> (README §3/§7)."""
+    """Correo: un mensaje por incidente y estado al tema SNS redtelecorp-avisos (el Learner Lab no deja verificar
+    correos en SES). SMS: uno por usuario. Deduplicado con NOTIF#... (README §3/§7)."""
     iid, estado = ev["incidenteId"], ev["estado"]
     asunto, texto = MENSAJES[estado]
     inc = _inc(iid)
     por_dni = {}
     for i in sorted(_vinculadas(inc), key=lambda x: x["fechaRegistro"]):
         por_dni[i["dni"]] = i
-    t = comun.tabla("notificaciones")
-    remitente = comun.param("notif/remitente", "pendiente@correo.com")
     enviadas = omitidas = fallidas = 0
+    topic = comun.param("notif/topic_arn", "")
+    con_correo = [i for i in por_dni.values() if "email" in i.get("canales", []) and i.get("email")]
+    if topic and con_correo and _marcar(f"NOTIF#{iid}#{estado}#CORREO", "email"):
+        zona = comun.zona(inc["zonaId"]) or {}
+        cuerpo = (f"{texto}\n\nZona: {zona.get('nombre', inc['zonaId'])} ({inc['zonaId']})\n"
+                  f"Reportes vinculados: {len(por_dni)}\nCódigos: " + ", ".join(i["codigo"] for i in con_correo[:20]))
+        try:
+            boto3.client("sns").publish(TopicArn=topic, Subject=f"Red TeleCorp: {asunto}"[:100], Message=cuerpo)
+        except Exception as err:
+            print(f"Fallo al publicar en {topic}: {err}")
+            comun.tabla("notificaciones").delete_item(Key={"pk": f"NOTIF#{iid}#{estado}#CORREO"})
     for dni, i in por_dni.items():
-        pk = f"NOTIF#{iid}#{estado}#{dni}"
+        if not _marcar(f"NOTIF#{iid}#{estado}#{dni}", ",".join(i.get("canales", []))):
+            omitidas += 1
+            continue
         try:
-            t.put_item(Item={"pk": pk, "canal": ",".join(i.get("canales", [])), "enviadoEn": comun.iso(comun.ahora()),
-                             "ttl": comun.ttl_dias(30)}, ConditionExpression="attribute_not_exists(pk)")
-        except ClientError as err:
-            if _cond_fallida(err):
-                omitidas += 1
-                continue
-            raise
-        try:
-            if "email" in i.get("canales", []) and i.get("email"):
-                boto3.client("ses").send_email(
-                    Source=remitente, Destination={"ToAddresses": [i["email"]]},
-                    Message={"Subject": {"Data": f"Red TeleCorp: {asunto}"},
-                             "Body": {"Text": {"Data": f"{texto}\n\nCódigo de tu reporte: {i['codigo']}"}}})
             if "sms" in i.get("canales", []) and i.get("celular"):
                 boto3.client("sns").publish(PhoneNumber=i["celular"], Message=f"Red TeleCorp: {texto}")
             enviadas += 1
         except Exception as err:  # se borra la marca para que un reintento pueda volver a enviar
-            print(f"Fallo al notificar {pk}: {err}")
-            t.delete_item(Key={"pk": pk})
+            print(f"Fallo al enviar SMS a {dni}: {err}")
+            comun.tabla("notificaciones").delete_item(Key={"pk": f"NOTIF#{iid}#{estado}#{dni}"})
             fallidas += 1
     return {"enviadas": enviadas, "omitidas": omitidas, "fallidas": fallidas}
 

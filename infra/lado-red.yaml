@@ -13,9 +13,18 @@ Parameters:
     Type: String
     Default: ""
     Description: AWS Academy / Learner Lab -> ARN de LabRole (no se pueden crear roles). Vacio = el stack crea sus roles.
+  CorreoAviso1:
+    Type: String
+    Default: ""
+    Description: Correo suscrito al tema SNS de avisos (llega un correo "Confirm subscription" que hay que aceptar).
+  CorreoAviso2:
+    Type: String
+    Default: ""
 
 Conditions:
   CrearRoles: !Equals [!Ref RolArn, ""]
+  ConCorreo1: !Not [!Equals [!Ref CorreoAviso1, ""]]
+  ConCorreo2: !Not [!Equals [!Ref CorreoAviso2, ""]]
 
 Globals:
   Function:
@@ -275,6 +284,26 @@ Resources:
         EnforceWorkGroupConfiguration: true
         ResultConfiguration:
           OutputLocation: !Sub s3://${Proyecto}-${AWS::AccountId}-${AWS::Region}/athena-resultados/
+
+  # ---------------- Avisos por correo (SNS) ----------------
+  # El Learner Lab no deja verificar correos en SES (ses:VerifyEmailIdentity): los avisos por correo
+  # salen por este tema y cada correo suscrito confirma una vez.
+  TemaAvisos:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${Proyecto}-avisos
+      DisplayName: Red TeleCorp
+  SuscripcionCorreo1:
+    Type: AWS::SNS::Subscription
+    Condition: ConCorreo1
+    Properties: { TopicArn: !Ref TemaAvisos, Protocol: email, Endpoint: !Ref CorreoAviso1 }
+  SuscripcionCorreo2:
+    Type: AWS::SNS::Subscription
+    Condition: ConCorreo2
+    Properties: { TopicArn: !Ref TemaAvisos, Protocol: email, Endpoint: !Ref CorreoAviso2 }
+  PTopicAvisos:
+    Type: AWS::SSM::Parameter
+    Properties: { Name: !Sub "/${Proyecto}/notif/topic_arn", Type: String, Value: !Ref TemaAvisos }
 
   # ---------------- Parametros de B ----------------
   PEscenario:

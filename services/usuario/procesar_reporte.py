@@ -210,8 +210,16 @@ def notificar(item, estado, asunto, mensaje):
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return
         raise
+    topic = params().get("notif/topic_arn", "")
     remitente = params().get("notif/remitente", "")
-    if "email" in canales and item.get("email") and "@" in remitente and "pendiente" not in remitente:
+    if "email" in canales and topic:
+        # El Learner Lab no deja verificar correos en SES: el acuse va al tema SNS redtelecorp-avisos.
+        try:
+            aws("sns").publish(TopicArn=topic, Subject=f"Red TeleCorp: {asunto}"[:100],
+                               Message=f"{mensaje}\n\nCódigo: {item['codigo']}")
+        except Exception as e:  # noqa: BLE001
+            log.warning("SNS tema falló: %s", e)
+    elif "email" in canales and item.get("email") and "@" in remitente and "pendiente" not in remitente:
         try:
             aws("ses").send_email(
                 Source=remitente,

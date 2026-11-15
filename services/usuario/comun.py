@@ -59,6 +59,7 @@ DEFAULTS = {
     "gcp/url_secundaria": "pendiente",
     "gcp/token": "",
     "notif/remitente": "",
+    "notif/topic_arn": "",
 }
 
 

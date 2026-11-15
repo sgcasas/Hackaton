@@ -52,6 +52,8 @@ def test_flujo_completo_colectivo(zona_con_reportes):
     assert n["enviadas"] == 12 and n["fallidas"] == 0
     n2 = incidente.handler({"accion": "notificar", "incidenteId": iid, "estado": "EN_REVISION"}, None)
     assert n2["enviadas"] == 0 and n2["omitidas"] == 12  # deduplicado
+    correo = comun.tabla("notificaciones").get_item(Key={"pk": f"NOTIF#{iid}#EN_REVISION#CORREO"})
+    assert "Item" in correo  # un solo correo por incidente y estado, al tema SNS
 
     # la antena A011 (Z03) cayó ANTES del primer reporte -> la supervisión lo vio primero
     _antena("A011", estadoActual="CAIDA", desde=comun.iso(comun.ahora() - timedelta(hours=2)))

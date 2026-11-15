@@ -62,6 +62,8 @@ def aws(monkeypatch):
         PARAMS["prioridad/pesos"] = _pesos()
         for k, v in PARAMS.items():
             ssm.put_parameter(Name=f"/redtelecorp/{k}", Value=v, Type="String", Overwrite=True)
+        topic = boto3.client("sns").create_topic(Name="redtelecorp-avisos")["TopicArn"]
+        ssm.put_parameter(Name="/redtelecorp/notif/topic_arn", Value=topic, Type="String", Overwrite=True)
         ses = boto3.client("ses")
         ses.verify_email_identity(EmailAddress="noc@redtelecorp.pe")
         sf = boto3.client("stepfunctions")
