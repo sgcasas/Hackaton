@@ -52,7 +52,7 @@ def _escribir_s3(filas):
 def procesar(metricas):
     """Procesa métricas ya validadas (ordenadas por ts). Devuelve lista de eventos disparados."""
     caida, saturada = comun.umbrales()
-    umbral = float(comun.param("ml/umbral_anomalia", "0.6"))
+    umbral = float(comun.param("ml/umbral_anomalia", "0.75"))
     racha_min = int(comun.param("ml/racha", "3"))
     t = comun.tabla("red")
     scores = _puntajes(metricas)

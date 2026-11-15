@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Red TeleCorp - portal y panel (React). Bucket S3 con sitio web estático + CloudFront (HTTPS) con el sitio como origen.
-  Sin Origin Access Control: el Learner Lab no deja crearlo (cloudfront:CreateOriginAccessControl). Solo en us-east-1.
+  Red TeleCorp - portal y panel (React) como sitio web estático en S3 (HTTP). La API y Cognito siguen en HTTPS.
+  Sin CloudFront: el Learner Lab no permite cloudfront:CreateDistribution ni CreateOriginAccessControl. Solo en us-east-1.
 
 Resources:
   BucketWeb:
@@ -28,41 +28,8 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub ${BucketWeb.Arn}/*
 
-  Distribucion:
-    Type: AWS::CloudFront::Distribution
-    Properties:
-      DistributionConfig:
-        Enabled: true
-        Comment: Red TeleCorp portal + panel
-        DefaultRootObject: index.html
-        PriceClass: PriceClass_100
-        HttpVersion: http2
-        Origins:
-          - Id: s3web
-            DomainName: !Select [1, !Split ["//", !GetAtt BucketWeb.WebsiteURL]]
-            CustomOriginConfig:
-              OriginProtocolPolicy: http-only
-        DefaultCacheBehavior:
-          TargetOriginId: s3web
-          ViewerProtocolPolicy: redirect-to-https
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized (administrada)
-          Compress: true
-        CacheBehaviors:
-          - PathPattern: config.json
-            TargetOriginId: s3web
-            ViewerProtocolPolicy: redirect-to-https
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled: el config cambia en cada deploy
-        CustomErrorResponses:
-          - {ErrorCode: 403, ResponseCode: 200, ResponsePagePath: /index.html}
-          - {ErrorCode: 404, ResponseCode: 200, ResponsePagePath: /index.html}
-
 Outputs:
   BucketWeb:
     Value: !Ref BucketWeb
-  DistribucionId:
-    Value: !Ref Distribucion
   Url:
-    Value: !Sub https://${Distribucion.DomainName}
-  UrlS3:
-    Description: Respaldo sin HTTPS (directo del bucket)
     Value: !GetAtt BucketWeb.WebsiteURL

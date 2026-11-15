@@ -178,7 +178,7 @@ def _falla_antena(a, umbral, racha):
 def verificar(ev):
     """Correlación reportes <-> antenas de la zona (P8)."""
     inc = _inc(ev["incidenteId"])
-    umbral, racha = float(comun.param("ml/umbral_anomalia", "0.6")), int(comun.param("ml/racha", "3"))
+    umbral, racha = float(comun.param("ml/umbral_anomalia", "0.75")), int(comun.param("ml/racha", "3"))
     fallas = []
     for a in comun.antenas(inc["zonaId"]):
         f = _falla_antena(a, umbral, racha)
@@ -257,7 +257,7 @@ def esperar_operador(ev):
 
 def revisar(ev):
     inc = _inc(ev["incidenteId"])
-    umbral, racha = float(comun.param("ml/umbral_anomalia", "0.6")), int(comun.param("ml/racha", "3"))
+    umbral, racha = float(comun.param("ml/umbral_anomalia", "0.75")), int(comun.param("ml/racha", "3"))
     pendientes = [a["antenaId"] for a in comun.antenas(inc["zonaId"])
                   if a["antenaId"] in inc.get("antenas", []) and _falla_antena(a, umbral, racha)]
     if not pendientes:

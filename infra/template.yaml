@@ -276,7 +276,7 @@ Resources:
       Value: '{"criticidad":{"RESIDENCIAL":1,"COMERCIAL":1.5,"EDUCATIVA":2,"INDUSTRIAL":2,"MEDICA":3,"CRITICA":3},"afectados":[[10,1],[100,2],[1000,3],[999999999,4]],"falla":{"INHABILITADA":3,"CAIDA":2,"SATURADA":1.5,"ANOMALIA":1.5,"NINGUNA":1},"bandas":[[9,"P1"],[4,"P2"],[2,"P3"],[0,"P4"]]}'
   PUmbralAnomalia:
     Type: AWS::SSM::Parameter
-    Properties: { Name: !Sub "/${Proyecto}/ml/umbral_anomalia", Type: String, Value: "0.6" }
+    Properties: { Name: !Sub "/${Proyecto}/ml/umbral_anomalia", Type: String, Value: "0.75" }
   PRegionActiva:
     Type: AWS::SSM::Parameter
     Properties: { Name: !Sub "/${Proyecto}/region_activa", Type: String, Value: "us-east-1" }

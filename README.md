@@ -256,7 +256,7 @@ Los prefijos `dt=` / `hora=` son para el partition projection de Athena (tablas 
 | `regla/usuarios` · `regla/horas` | String | `10` · `24` | A |
 | `regla/tope_dni` | String | `5` (máximo de reportes por DNI en la ventana; lo crea el stack de A) | A |
 | `prioridad/pesos` | String (JSON) | ver `infra/template.yaml` | B |
-| `ml/umbral_anomalia` | String | `0.6` | B |
+| `ml/umbral_anomalia` | String | `0.75` (con 0.6 hubo falsos positivos en horas pico) | B |
 | `region_activa` | String | `us-east-1` | A y B |
 | `gcp/url_principal` · `gcp/url_secundaria` | String | `pendiente` → URLs de Cloud Run | A y B |
 | `gcp/token` | **SecureString** | por CLI (sección 0) | A y B |
