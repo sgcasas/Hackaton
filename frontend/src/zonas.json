@@ -1,0 +1,72 @@
+[
+ {
+  "id": "Z01",
+  "nombre": "Miraflores",
+  "tipoZona": "RESIDENCIAL",
+  "lat": -12.1211,
+  "lng": -77.0297
+ },
+ {
+  "id": "Z02",
+  "nombre": "San Isidro financiero",
+  "tipoZona": "COMERCIAL",
+  "lat": -12.0971,
+  "lng": -77.0365
+ },
+ {
+  "id": "Z03",
+  "nombre": "Barranco",
+  "tipoZona": "RESIDENCIAL",
+  "lat": -12.1491,
+  "lng": -77.0217
+ },
+ {
+  "id": "Z04",
+  "nombre": "Santiago de Surco",
+  "tipoZona": "RESIDENCIAL",
+  "lat": -12.1366,
+  "lng": -76.9916
+ },
+ {
+  "id": "Z05",
+  "nombre": "Campus UTEC",
+  "tipoZona": "EDUCATIVA",
+  "lat": -12.1355,
+  "lng": -77.0222
+ },
+ {
+  "id": "Z06",
+  "nombre": "Hospital Rebagliati",
+  "tipoZona": "MEDICA",
+  "lat": -12.0789,
+  "lng": -77.04
+ },
+ {
+  "id": "Z07",
+  "nombre": "Aeropuerto Callao",
+  "tipoZona": "CRITICA",
+  "lat": -12.0219,
+  "lng": -77.1143
+ },
+ {
+  "id": "Z08",
+  "nombre": "Ate industrial",
+  "tipoZona": "INDUSTRIAL",
+  "lat": -12.045,
+  "lng": -76.93
+ },
+ {
+  "id": "Z09",
+  "nombre": "La Molina",
+  "tipoZona": "RESIDENCIAL",
+  "lat": -12.079,
+  "lng": -76.942
+ },
+ {
+  "id": "Z10",
+  "nombre": "Cercado de Lima",
+  "tipoZona": "CRITICA",
+  "lat": -12.0464,
+  "lng": -77.0428
+ }
+]
