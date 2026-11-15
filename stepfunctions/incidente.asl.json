@@ -471,26 +471,14 @@
     },
     "EsperarOperador": {
       "Type": "Task",
-      "Comment": "api-operador (A) responde con SendTaskSuccess {resolucion, comentario}",
-      "Resource": "arn:aws:states:::dynamodb:updateItem.waitForTaskToken",
+      "Comment": "La λ guarda el taskToken en el incidente; api-operador (A) responde con SendTaskSuccess {resolucion, comentario}",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
       "Parameters": {
-        "TableName": "${TablaIncidentes}",
-        "Key": {
-          "pk": {
-            "S.$": "States.Format('INCID#{}', $.abrir.p.incidenteId)"
-          },
-          "sk": {
-            "S": "META"
-          }
-        },
-        "UpdateExpression": "SET taskToken = :t, estado = :e",
-        "ExpressionAttributeValues": {
-          ":t": {
-            "S.$": "$$.Task.Token"
-          },
-          ":e": {
-            "S": "ESPERANDO_OPERADOR"
-          }
+        "FunctionName": "${FnIncidente}",
+        "Payload": {
+          "accion": "esperar_operador",
+          "incidenteId.$": "$.abrir.p.incidenteId",
+          "taskToken.$": "$$.Task.Token"
         }
       },
       "TimeoutSeconds": 86400,

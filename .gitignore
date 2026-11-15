@@ -7,3 +7,5 @@ harness/
 node_modules/
 frontend/dist/
 samconfig.toml
+.claude-run/
+.venv/

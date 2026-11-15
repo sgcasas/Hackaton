@@ -249,6 +249,12 @@ def estado(ev):
     return {"actualizadas": n}
 
 
+def esperar_operador(ev):
+    """La SF queda esperando (waitForTaskToken); api-operador responde con SendTaskSuccess."""
+    _set_inc(ev["incidenteId"], taskToken=ev["taskToken"], estado="ESPERANDO_OPERADOR")
+    return {"esperando": True}
+
+
 def revisar(ev):
     inc = _inc(ev["incidenteId"])
     umbral, racha = float(comun.param("ml/umbral_anomalia", "0.6")), int(comun.param("ml/racha", "3"))
@@ -308,6 +314,7 @@ def error(ev):
 
 ACCIONES = {"abrir": abrir, "vincular": vincular, "notificar": notificar, "verificar": verificar,
             "prioridad": prioridad, "resumir": resumir, "estado": estado, "revisar": revisar,
+            "esperar_operador": esperar_operador,
             "cerrar": cerrar, "error": error}
 
 

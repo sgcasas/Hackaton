@@ -144,3 +144,11 @@ def test_vinculada_tarde_hereda_prioridad(zona_con_reportes):
     incidente.handler({"accion": "vincular", "incidenteId": iid}, None)
     nueva = comun.de_ddb(comun.tabla("incidencias").get_item(Key={"pk": "INC#cod-Z03-50", "sk": "META"})["Item"])
     assert nueva["incidenteId"] == iid and nueva["prioridad"] == p
+
+
+def test_esperar_operador_guarda_token(zona_con_reportes):
+    ent = {"origen": "ZONA", "evento": "COLECTIVO", "zonaId": "Z03", "antenaId": None, "detectadoEn": comun.iso(comun.ahora())}
+    iid = incidente.handler({"accion": "abrir", "entrada": ent, "ejecucion": "zona-Z03-op"}, None)["incidenteId"]
+    incidente.handler({"accion": "esperar_operador", "incidenteId": iid, "taskToken": "tok-123"}, None)
+    inc = _inc(iid)
+    assert inc["taskToken"] == "tok-123" and inc["estado"] == "ESPERANDO_OPERADOR"
