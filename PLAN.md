@@ -14,45 +14,50 @@ Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`
 
 ## 2. TODO
 
-### Fase 0: juntos (antes de separarse)
-- [x] Escribir los contratos: README, schemas, ejemplos y semilla (B).
-- [ ] **Compañero: revisar y aprobar el `README.md`.** Cualquier cambio se hace ahí, primero.
-- [ ] Probar en la cuenta de AWS: Global Tables, la replicación de S3 a us-west-2, Cognito, SES, SMS por SNS y Lambda con imagen de contenedor (ECR). Anotar qué falla.
-- [ ] Decidir la cuenta de GCP (o Azure como plan B).
-- [x] Crear `infra/template.yaml` (SAM): tablas, bucket, colas + DLQ, parámetros y alarmas (validado con cfn-lint).
-- [ ] Desplegar la base en us-east-1 y cargar la semilla (README §0).
-- [ ] Crear el resto de carpetas a medida que se usen: `services/`, `stepfunctions/`, `gcp/`, `frontend/`.
+> **Estado al 15-nov:** todo AWS desplegado en us-east-1 desde la VM "MV Dev" del Learner Lab (cuenta 506630903590).
+> - **Portal (HTTPS):** https://redtelecorp-web-506630903590.s3.us-east-1.amazonaws.com/index.html. La versión HTTP no permite la ubicación del navegador.
+> - **API:** https://0mbbbg8sf3.execute-api.us-east-1.amazonaws.com/prod
+> - **Stacks:** `redtelecorp-base`, `redtelecorp-red`, `redtelecorp-usuario`, `redtelecorp-frontend`.
+
+### Fase 0: juntos
+- [x] Contratos: README, schemas, ejemplos y semilla.
+- [x] El compañero revisó el README; sus notas ya están integradas.
+- [x] Pruebas en Learner Lab. **Bloqueado:** CloudFront (CreateDistribution y CreateOriginAccessControl). **Funciona:** Global Tables (una región), Cognito, ECR/Lambda con imagen, Step Functions con LabRole y EventBridge Scheduler.
+- [x] Base en us-east-1 + semilla cargada.
 
 ### Fase 1A: lado usuario (compañero)
-- [ ] API Gateway (REST) `POST /reportes` → SQS directo, con request validator (`contracts/schemas/reporte.sqs.schema.json`).
-- [ ] λ procesar-reporte: validar en `Clientes`, buscar la antena más cercana para sacar la zona, `/clasificar`, guardar META + HIST, acuse, regla 10/24 h → iniciar SF (README §5).
-- [ ] `servicio-ia` en Cloud Run + Gemini (us-east4 y us-central1).
-- [ ] Cognito + λ api-operador (rutas de ARQUITECTURA §8).
-- [ ] Portal del usuario + panel del operador, con failover a la segunda API.
+- [x] API Gateway → SQS directo (probado: 202 y la incidencia queda guardada).
+- [x] λ procesar-reporte (validación, zona y regla 10/24 h).
+- [x] Cognito + λ api-operador.
+- [x] Portal + panel. Queda en S3 por la falta de CloudFront; por HTTPS se usa la URL de arriba.
+- [ ] **`servicio-ia` en GCP (compañero).** Después hay que poner `gcp/url_principal`, `gcp/url_secundaria` y `gcp/token` en el Parameter Store de **la cuenta 506630903590**. Hasta entonces, `tipoIA` y el resumen quedan vacíos.
 
 ### Fase 1B: lado red (Casas)
-> Código y tests listos (`services/red`, `stepfunctions/`, `infra/lado-red.yaml`, 20 tests). **Falta el deploy (README §12).**
-- [x] Datos semilla (`scripts/semilla.py`).
-- [x] λ simulador + EventBridge (1 min) → SQS `metricas`, con escenarios: normal, corte de zona, antena inestable.
-- [x] λ procesar-métricas: umbrales, estado de la antena en `Red`, `FALLA#`, escritura en S3 e inicio de la SF si cambia el estado.
-- [x] SF incidente: crear, vincular, notificar (deduplicado), verificar antenas, prioridad, `/resumir`, esperar restablecimiento, cerrar y guardar en S3.
-- [x] Notificaciones directas desde la SF (SES y SNS).
-- [x] ML: λ entrenar (contenedor, Isolation Forest con el histórico de S3) → `modelos/`. Inferencia dentro de procesar-métricas → evento `ANOMALIA`.
-- [x] SF diaria: recurrencia (Athena → `estructural`), analítica (→ `Agregados`) y reentrenamiento.
-- [x] Glue/Athena: tablas con partition projection sobre los prefijos de README §8.
+- [x] Simulador, procesar-métricas + ML, entrenar, SF incidente, SF diaria, Glue/Athena (22 tests).
+- [x] Desplegado. Primer modelo entrenado (7200 filas sintéticas).
+- [x] Arreglos al desplegar:
+  - esperar al operador con `lambda:invoke.waitForTaskToken`, porque DynamoDB no lo soporta;
+  - umbral de anomalía 0,75, porque con 0,6 hubo un falso positivo en A038.
 
-### Fase 2: integración (juntos)
-- [ ] De punta a punta: 15 reportes de una zona → incidente colectivo → notificaciones → cierre.
-- [ ] De punta a punta: antena inestable → el ML la detecta antes que los usuarios (`detectadoPor = SUPERVISION`).
-- [ ] Alarmas de CloudWatch en las DLQ.
-- [ ] Script `scripts/pico.py`: carga de 500 reportes en 1 minuto, para confirmar que no se pierde ninguno.
+### Fase 2: integración
+- [x] Antena cae → SF abre el incidente (P2, `detectadoPor = SUPERVISION`) → espera → se cierra sola y queda en S3 (probado con A011).
+- [ ] **SES:** verificar los correos del grupo (clic en el correo de AWS), poner `notif/remitente` y asignar esos correos a los clientes 1–30 (`scripts/correos_demo.py`).
+- [ ] **Operador de Cognito:** crearlo. La contraseña la pone Casas.
+- [ ] De punta a punta: 15 reportes de una zona (`scripts/pico.py --zona Z06 --n 15`) → incidente colectivo → correos → cierre.
+- [ ] Antena inestable (escenario `antena_inestable`) → el ML la detecta antes que los usuarios.
+- [ ] Pico de carga: `pico.py` con 190 reportes, sin pérdidas.
+- [ ] Probar el panel del operador: login, incidentes y "Restablecido / Sin falla".
+- [ ] Correr la SF diaria a mano una vez (Athena → `Agregados`) para que el panel tenga analítica.
 
-### Fase 3: multi-región (juntos)
-- [ ] Desplegar el mismo template en us-west-2, con `region_activa` en `us-east-1`.
-- [ ] Probar el failover: apagar la API de us-east-1 y ver que el portal sigue funcionando.
+### Fase 3: multi-región
+- [ ] Desplegar en us-west-2 (base con `EsRegionPrincipal=false`, red, usuario) y agregar la réplica `RegionReplica=us-west-2` a la base de us-east-1.
+- [ ] Poner las 2 APIs en `frontend/public/config.json` y volver a subir el frontend.
+- [ ] Probar el failover: apagar la API de us-east-1 y ver que el portal pasa a us-west-2.
 
 ### Fase 4: entrega
-- [ ] Exportar `ARQUITECTURA.drawio` a PNG.
+- [ ] Actualizar `ARQUITECTURA.drawio`: el frontend es S3 sin CloudFront, y `incidente`/`analitica` son Lambdas.
+- [ ] Exportar el diagrama a PNG.
 - [ ] Guion del video (≤ 5 min, ARQUITECTURA §14), grabación y edición.
 - [ ] Revisar el repo: **nada que parezca un informe**.
+- [ ] Al terminar: desactivar el schedule del simulador (EventBridge Scheduler) para no gastar crédito del Lab.
 - [ ] Subir a Canvas: video + repo + arquitectura.
