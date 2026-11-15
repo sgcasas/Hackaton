@@ -1,0 +1,7 @@
+{
+  "_nota": "Lo genera scripts/deploy-aws.ps1 con las salidas de los stacks. El orden es la prioridad del failover.",
+  "apis": [
+    { "region": "us-east-1", "url": "https://REEMPLAZAR.execute-api.us-east-1.amazonaws.com/prod", "userPoolId": "", "clientId": "" },
+    { "region": "us-west-2", "url": "https://REEMPLAZAR.execute-api.us-west-2.amazonaws.com/prod", "userPoolId": "", "clientId": "" }
+  ]
+}
