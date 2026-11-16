@@ -164,6 +164,14 @@ def resolver_incidente(incidente_id, body, operador):
     return respuesta(200, {"incidenteId": incidente_id, "resolucion": resolucion})
 
 
+def _total(v):
+    """La SF diaria guarda por clave un dict de métricas ({incidentes, afectados, ...} o {reportes});
+    el panel solo necesita un número para la barra."""
+    if isinstance(v, dict):
+        return v.get("incidentes", v.get("reportes", 0)) or 0
+    return v
+
+
 def analitica(tipo):
     if tipo not in ("ZONA", "ANTENA", "TIPO", "DURACION"):
         return respuesta(400, {"error": "tipo debe ser ZONA, ANTENA, TIPO o DURACION"})
@@ -171,7 +179,7 @@ def analitica(tipo):
     r = tabla(T_AGREGADOS).query(KeyConditionExpression=Key("pk").eq(f"AGG#{tipo}"), ScanIndexForward=False, Limit=1)
     if r["Items"]:
         it = r["Items"][0]
-        datos = sorted(({"clave": k, "total": v} for k, v in (it.get("datos") or {}).items()),
+        datos = sorted(({"clave": k, "total": _total(v)} for k, v in (it.get("datos") or {}).items()),
                        key=lambda d: d["total"], reverse=True)
         return respuesta(200, {"fuente": "agregados", "fecha": it["sk"], "datos": datos})
     # 2) Si la SF diaria aún no corrió, se calcula en vivo (útil en la demo).
