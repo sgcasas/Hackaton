@@ -30,7 +30,9 @@ def sinteticos(antena_ids, fin, dias=3, cada_min=30, rng=None):
 def entrenar(registros, antena_ids, version, fin, minimo=2000):
     """registros: [{antenaId, dt (datetime), gbMin, estado}]. Solo aprende de tráfico NORMAL."""
     normales = [r for r in registros if r.get("estado", "NORMAL") == "NORMAL"]
-    if len(normales) < minimo:
+    # Con pocas horas del día reales, el modelo ve cualquier otra hora como anomalía:
+    # se completa con sintéticos hasta tener las 24 horas cubiertas.
+    if len(normales) < minimo or len({r["dt"].hour for r in normales}) < 24:
         normales += sinteticos(antena_ids, fin)
     por_antena = {}
     for r in normales:
