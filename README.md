@@ -5,7 +5,7 @@ Sistema serverless para detectar y gestionar incidencias de red. Cruza los repor
 ## Nubes y servicios
 
 - **AWS:** API Gateway, SQS, Lambda, DynamoDB (Global Tables), Step Functions, EventBridge, S3, Glue + Athena, SNS, SSM Parameter Store, Cognito, CloudWatch.
-- **GCP:** Cloud Functions gen2 (`servicio-ia`) con Gemini en Vertex AI, que clasifica y resume reportes.
+- **Azure:** Azure Functions (`servicio-ia`) con Gemini (Google AI Studio), que clasifica y resume reportes. Si Gemini no responde, usa reglas.
 
 Diagrama: [ARQUITECTURA.drawio](ARQUITECTURA.drawio). Diseño: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
 
@@ -17,8 +17,8 @@ Necesita AWS CLI, SAM CLI, Docker, Node 18+ y Python 3.12.
 # Todo en AWS (Learner Lab, us-east-1): base, lado red, lado usuario y portal
 bash scripts/deploy-aws.sh correo1@utec.edu.pe correo2@utec.edu.pe
 
-# Servicio de IA en GCP; guarda URLs y token en Parameter Store
-.\scripts\deploy-gcp.ps1 -Proyecto <proyecto-gcp> -RegionesAws @("us-east-1")
+# Servicio de IA en Azure; las URLs y el token se cargan en Parameter Store
+.\scripts\deploy-azure.ps1 -Token <token>
 
 # Tests (AWS simulado con moto) y validación de contratos
 pip install -r tests/requirements.txt && python -m pytest -q tests
@@ -40,7 +40,8 @@ El Learner Lab no deja crear roles (todo usa `LabRole`), ni usar CloudFront (el 
 frontend/      portal y panel del operador (React + Vite)
 services/      Lambdas en Python: red/ (antenas, ML, incidentes) y usuario/ (reportes, API del operador)
 stepfunctions/ incidente.asl.json y diaria.asl.json
-gcp/           servicio-ia (Cloud Functions gen2)
+azure/         servicio-ia (Azure Functions, desplegado)
+gcp/           versión alternativa para GCP (no desplegada)
 infra/         plantillas SAM/CloudFormation
 contracts/     JSON Schemas, ejemplos y datos semilla
 scripts/       despliegue, semilla, pico de carga, validación
