@@ -2,12 +2,12 @@
 
 **A = lado usuario** (portal, reportes, operador, IA en GCP) · **B = lado red** (Casas: antenas, ML, Step Functions, notificaciones)
 
-Diseño completo en `ARQUITECTURA.md`. **Primero se cierran los contratos (`README.md`)**: después cada uno avanza sin bloquear al otro.
+Diseño completo en `ARQUITECTURA.md`. **Primero se cierran los contratos (`CONTRATO.md`)**: después cada uno avanza sin bloquear al otro.
 
 ---
 
 ## 1. Contratos
-Están en **`README.md`** (fuente única) + `contracts/` (JSON Schemas, ejemplos y semilla) + `infra/template.yaml` (base SAM).
+Están en **`CONTRATO.md`** (fuente única) + `../contracts/` (JSON Schemas, ejemplos y semilla) + `../infra/template.yaml` (base SAM).
 Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`.
 
 ---
@@ -20,8 +20,8 @@ Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`
 > - **Stacks:** `redtelecorp-base`, `redtelecorp-red`, `redtelecorp-usuario`, `redtelecorp-frontend`.
 
 ### Fase 0: juntos
-- [x] Contratos: README, schemas, ejemplos y semilla.
-- [x] El compañero revisó el README; sus notas ya están integradas.
+- [x] Contratos: CONTRATO.md, schemas, ejemplos y semilla.
+- [x] El compañero revisó el contrato; sus notas ya están integradas.
 - [x] Pruebas en Learner Lab. **Bloqueado:** CloudFront (CreateDistribution y CreateOriginAccessControl). **Funciona:** Global Tables (una región), Cognito, ECR/Lambda con imagen, Step Functions con LabRole y EventBridge Scheduler.
 - [x] Base en us-east-1 + semilla cargada.
 
@@ -50,7 +50,7 @@ Antes de cada push que toque un contrato: `python3 scripts/validar_contratos.py`
 - [ ] Correr la SF diaria a mano una vez (Athena → `Agregados`) para que el panel tenga analítica.
 
 ### Fase 3: multi-región
-- [x] Intentado: las réplicas de Global Tables hacia us-west-2 se quedan en `CREATING` o fallan en el Lab (README §13). Hoy corre en una sola región.
+- [x] Intentado: las réplicas de Global Tables hacia us-west-2 se quedan en `CREATING` o fallan en el Lab (DESPLIEGUE.md §13). Hoy corre en una sola región.
 - [ ] Decidir cómo mostrarlo en el video: explicar el diseño multi-región (diagrama + script `REGIONES=...`) y la limitación del Lab.
 
 ### Fase 4: entrega
